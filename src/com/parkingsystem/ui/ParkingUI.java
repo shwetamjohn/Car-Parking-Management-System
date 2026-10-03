@@ -14,40 +14,45 @@ import java.util.List;
 
 /**
  * Main UI class for the Car Parking Management System.
- * Built with Java Swing; uses ParkingDAO for all DB operations.
+ * Built with Java Swing; delegates all DB work to {@link ParkingDAO}.
  *
- * Layout overview:
- *   ┌─────────────────────────────────────┐
- *   │          HEADER / LOGO              │
- *   ├─────────────────────────────────────┤
- *   │  Vehicle No  [________]             │
- *   │  Ticket ID   [________]             │
- *   │  Type        [ComboBox]             │
- *   │  [Entry] [Exit] [Slots] [Manage] [Reports] │
- *   └─────────────────────────────────────┘
+ * Layout:
+ *   ┌──────────────────────────────────────────┐
+ *   │       🅿 Car Parking Management System   │  ← header
+ *   ├──────────────────────────────────────────┤
+ *   │  Vehicle No   [__________]               │
+ *   │  Owner Contact[__________]               │  ← new (maps to VEHICLES.OWNER_CONTACT)
+ *   │  Ticket ID    [__________]               │
+ *   │  Type         [ComboBox ]                │
+ *   ├──────────────────────────────────────────┤
+ *   │ [Entry] [Exit] [Slots] [Manage] [Reports]│  ← button bar
+ *   └──────────────────────────────────────────┘
  */
 public class ParkingUI extends JFrame {
 
-    // ---- UI Components (match class diagram attributes) ----
-    private JTextField txtVehicleNum;
-    private JTextField txtTicketId;
+    // ---- UI Components (class-diagram attributes) ----
+    private JTextField        txtVehicleNum;
+    private JTextField        txtTicketId;
     private JComboBox<String> cmbType;
-    private JButton btnEntry;
-    private JButton btnExit;
-    private JButton btnSlotMonitor;
-    private JButton btnManageSlots;
-    private JButton btnReports;
+    private JButton           btnEntry;
+    private JButton           btnExit;
+    private JButton           btnSlotMonitor;
+    private JButton           btnManageSlots;
+    private JButton           btnReports;
+
+    // ---- Extra field required by VEHICLES table ----
+    private JTextField txtOwnerContact;
 
     // ---- DAO ----
     private final ParkingDAO dao = new ParkingDAO();
 
     // -------------------------------------------------------
-    //  Constructor — builds the main window
+    //  Constructor
     // -------------------------------------------------------
     public ParkingUI() {
         setTitle("Car Parking Management System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(520, 340);
+        setSize(540, 370);
         setLocationRelativeTo(null);
         setResizable(false);
 
@@ -60,20 +65,20 @@ public class ParkingUI extends JFrame {
     //  Component initialisation
     // -------------------------------------------------------
     private void initComponents() {
-        txtVehicleNum = new JTextField(15);
-        txtTicketId   = new JTextField(15);
+        txtVehicleNum   = new JTextField(15);
+        txtOwnerContact = new JTextField(15);
+        txtTicketId     = new JTextField(15);
 
         cmbType = new JComboBox<>(new String[]{"CAR", "TWO_WHEELER", "HEAVY"});
 
-        btnEntry       = new JButton("🚗 Entry");
-        btnExit        = new JButton("🏁 Exit");
-        btnSlotMonitor = new JButton("📊 Slot Monitor");
-        btnManageSlots = new JButton("🔧 Manage Slots");
-        btnReports     = new JButton("📋 Reports");
+        btnEntry       = new JButton("🚗  Entry");
+        btnExit        = new JButton("🏁  Exit");
+        btnSlotMonitor = new JButton("📊  Slot Monitor");
+        btnManageSlots = new JButton("🔧  Manage Slots");
+        btnReports     = new JButton("📋  Reports");
 
-        // Style buttons
         Color btnColor = new Color(52, 152, 219);
-        Font  btnFont  = new Font("Segoe UI", Font.BOLD, 13);
+        Font  btnFont  = new Font("Segoe UI", Font.BOLD, 12);
         for (JButton b : new JButton[]{btnEntry, btnExit, btnSlotMonitor, btnManageSlots, btnReports}) {
             b.setBackground(btnColor);
             b.setForeground(Color.WHITE);
@@ -93,61 +98,58 @@ public class ParkingUI extends JFrame {
 
         // Header
         JLabel header = new JLabel("🅿  Car Parking Management System", SwingConstants.CENTER);
-        header.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        header.setFont(new Font("Segoe UI", Font.BOLD, 17));
         header.setForeground(new Color(44, 62, 80));
         header.setBorder(new EmptyBorder(0, 0, 10, 0));
         root.add(header, BorderLayout.NORTH);
 
-        // Form panel
+        // Form
         JPanel form = new JPanel(new GridBagLayout());
         form.setBackground(new Color(236, 240, 241));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 8, 6, 8);
         gbc.anchor = GridBagConstraints.WEST;
-
         Font labelFont = new Font("Segoe UI", Font.PLAIN, 13);
 
         // Row 0 — Vehicle Number
         gbc.gridx = 0; gbc.gridy = 0;
-        JLabel lVeh = new JLabel("Vehicle Number:");
-        lVeh.setFont(labelFont);
+        JLabel lVeh = new JLabel("Vehicle Number:"); lVeh.setFont(labelFont);
         form.add(lVeh, gbc);
-        gbc.gridx = 1;
-        form.add(txtVehicleNum, gbc);
+        gbc.gridx = 1; form.add(txtVehicleNum, gbc);
 
-        // Row 1 — Ticket ID
+        // Row 1 — Owner Contact
         gbc.gridx = 0; gbc.gridy = 1;
-        JLabel lTkt = new JLabel("Ticket ID:");
-        lTkt.setFont(labelFont);
-        form.add(lTkt, gbc);
-        gbc.gridx = 1;
-        form.add(txtTicketId, gbc);
+        JLabel lOwner = new JLabel("Owner Contact:"); lOwner.setFont(labelFont);
+        form.add(lOwner, gbc);
+        gbc.gridx = 1; form.add(txtOwnerContact, gbc);
 
-        // Row 2 — Vehicle Type
+        // Row 2 — Ticket ID
         gbc.gridx = 0; gbc.gridy = 2;
-        JLabel lType = new JLabel("Vehicle Type:");
-        lType.setFont(labelFont);
+        JLabel lTkt = new JLabel("Ticket ID:"); lTkt.setFont(labelFont);
+        form.add(lTkt, gbc);
+        gbc.gridx = 1; form.add(txtTicketId, gbc);
+
+        // Row 3 — Vehicle Type
+        gbc.gridx = 0; gbc.gridy = 3;
+        JLabel lType = new JLabel("Vehicle Type:"); lType.setFont(labelFont);
         form.add(lType, gbc);
-        gbc.gridx = 1;
-        form.add(cmbType, gbc);
+        gbc.gridx = 1; form.add(cmbType, gbc);
 
         root.add(form, BorderLayout.CENTER);
 
         // Button bar
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
         btnPanel.setBackground(new Color(236, 240, 241));
-        btnPanel.add(btnEntry);
-        btnPanel.add(btnExit);
-        btnPanel.add(btnSlotMonitor);
-        btnPanel.add(btnManageSlots);
-        btnPanel.add(btnReports);
+        for (JButton b : new JButton[]{btnEntry, btnExit, btnSlotMonitor, btnManageSlots, btnReports}) {
+            btnPanel.add(b);
+        }
         root.add(btnPanel, BorderLayout.SOUTH);
 
         setContentPane(root);
     }
 
     // -------------------------------------------------------
-    //  Event listeners
+    //  Listeners
     // -------------------------------------------------------
     private void attachListeners() {
         btnEntry.addActionListener(e -> handleEntry());
@@ -158,11 +160,17 @@ public class ParkingUI extends JFrame {
     }
 
     // -------------------------------------------------------
-    //  handleEntry — registers a vehicle entry
+    //  handleEntry
     // -------------------------------------------------------
+    /**
+     * Collects Vehicle Number, Owner Contact, and Vehicle Type from the form,
+     * then calls {@link ParkingDAO#registerVehicleEntry} which upserts VEHICLES
+     * and inserts into PARKING_TICKETS.
+     */
     public void handleEntry() {
-        String vehicleNum  = txtVehicleNum.getText().trim().toUpperCase();
-        String vehicleType = (String) cmbType.getSelectedItem();
+        String vehicleNum    = txtVehicleNum.getText().trim().toUpperCase();
+        String ownerContact  = txtOwnerContact.getText().trim();
+        String vehicleType   = (String) cmbType.getSelectedItem();
 
         if (vehicleNum.isEmpty()) {
             JOptionPane.showMessageDialog(this,
@@ -171,25 +179,33 @@ public class ParkingUI extends JFrame {
             return;
         }
 
-        boolean success = dao.registerVehicleEntry(vehicleNum, vehicleType);
+        boolean success = dao.registerVehicleEntry(vehicleNum, vehicleType, ownerContact);
+
         if (success) {
             JOptionPane.showMessageDialog(this,
-                "✅ Entry registered!\n" +
-                "Vehicle : " + vehicleNum + "\n" +
-                "Type    : " + vehicleType,
+                "✅ Entry Registered!\n\n" +
+                "Vehicle  : " + vehicleNum   + "\n" +
+                "Type     : " + vehicleType  + "\n" +
+                "Contact  : " + (ownerContact.isEmpty() ? "N/A" : ownerContact),
                 "Entry Successful", JOptionPane.INFORMATION_MESSAGE);
             txtVehicleNum.setText("");
+            txtOwnerContact.setText("");
         } else {
             JOptionPane.showMessageDialog(this,
-                "❌ No available slot found for type: " + vehicleType +
-                "\nOr a DB error occurred.",
+                "❌ No available slot for type: " + vehicleType +
+                "\n\nParking may be full or a DB error occurred.",
                 "Entry Failed", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     // -------------------------------------------------------
-    //  handleExit — processes a vehicle exit and shows charge
+    //  handleExit
     // -------------------------------------------------------
+    /**
+     * Validates the Ticket ID, prompts for payment mode, then calls
+     * {@link ParkingDAO#processVehicleExit} which inserts into PAYMENTS,
+     * stamps EXIT_TIME, and frees the slot.
+     */
     public void handleExit() {
         String ticketStr = txtTicketId.getText().trim();
         if (ticketStr.isEmpty()) {
@@ -209,21 +225,21 @@ public class ParkingUI extends JFrame {
             return;
         }
 
-        // Ask for payment mode
+        // Ask for payment mode before processing
         String[] modes = {"CASH", "CARD", "UPI"};
         String paymentMode = (String) JOptionPane.showInputDialog(
             this, "Select Payment Mode:", "Payment",
             JOptionPane.PLAIN_MESSAGE, null, modes, modes[0]);
-
         if (paymentMode == null) return; // user cancelled
 
         double charge = dao.processVehicleExit(ticketId, paymentMode);
+
         if (charge > 0) {
             JOptionPane.showMessageDialog(this,
-                "✅ Exit processed!\n" +
-                "Ticket ID     : " + ticketId + "\n" +
-                "Payment Mode  : " + paymentMode + "\n" +
-                "Amount Charged: ₹" + String.format("%.2f", charge),
+                "✅ Exit Processed!\n\n" +
+                "Ticket ID      : " + ticketId    + "\n" +
+                "Payment Mode   : " + paymentMode + "\n" +
+                "Amount Charged : \u20b9" + String.format("%.2f", charge),
                 "Exit Successful", JOptionPane.INFORMATION_MESSAGE);
             txtTicketId.setText("");
         } else {
@@ -234,47 +250,82 @@ public class ParkingUI extends JFrame {
     }
 
     // -------------------------------------------------------
-    //  displaySlotGrid — live slot monitor in a dialog
+    //  displaySlotGrid
     // -------------------------------------------------------
+    /**
+     * Opens a dialog showing a colour-coded grid of all parking slots.
+     * Clicking an OCCUPIED slot queries DB (via getOccupiedSlotDetail)
+     * and shows vehicle number, owner contact, entry time, and estimated fee.
+     *
+     * 🟢 Green  = AVAILABLE
+     * 🔴 Red    = OCCUPIED        (click to see vehicle details)
+     * 🟡 Yellow = UNDER_MAINTENANCE
+     */
     public void displaySlotGrid() {
         List<Slot> slots = dao.getRealTimeSlotStatuses();
 
         JDialog dialog = new JDialog(this, "Slot Monitor — Live Status", true);
-        dialog.setSize(600, 420);
+        dialog.setSize(640, 460);
         dialog.setLocationRelativeTo(this);
 
-        // Grid panel: each slot shown as a coloured label
-        JPanel grid = new JPanel(new GridLayout(0, 6, 5, 5));
-        grid.setBorder(new EmptyBorder(10, 10, 10, 10));
+        JPanel grid = new JPanel(new GridLayout(0, 6, 6, 6));
+        grid.setBorder(new EmptyBorder(12, 12, 12, 12));
         grid.setBackground(Color.WHITE);
 
         for (Slot s : slots) {
             JLabel cell = new JLabel(s.getSlotNumber(), SwingConstants.CENTER);
             cell.setOpaque(true);
             cell.setFont(new Font("Segoe UI", Font.BOLD, 11));
-            cell.setToolTipText(
-                "Floor: " + s.getFloor() + " | Type: " + s.getSlotType());
+            cell.setBorder(BorderFactory.createLineBorder(Color.DARK_GRAY, 1));
+            cell.setToolTipText("Floor: " + s.getFloor() + " | Type: " + s.getSlotType()
+                                + " | " + s.getStatus());
 
-            if ("AVAILABLE".equalsIgnoreCase(s.getStatus())) {
-                cell.setBackground(new Color(39, 174, 96));   // green
-                cell.setForeground(Color.WHITE);
-            } else {
-                cell.setBackground(new Color(231, 76, 60));   // red
-                cell.setForeground(Color.WHITE);
+            switch (s.getStatus().toUpperCase()) {
+                case "AVAILABLE":
+                    cell.setBackground(new Color(39, 174, 96));
+                    cell.setForeground(Color.WHITE);
+                    break;
+                case "UNDER_MAINTENANCE":
+                    cell.setBackground(new Color(241, 196, 15));
+                    cell.setForeground(new Color(44, 62, 80));
+                    break;
+                case "OCCUPIED":
+                default:
+                    cell.setBackground(new Color(231, 76, 60));
+                    cell.setForeground(Color.WHITE);
+                    // Click on OCCUPIED slot → show vehicle details
+                    final int slotId = s.getSlotId();
+                    final String slotNo = s.getSlotNumber();
+                    cell.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    cell.addMouseListener(new MouseAdapter() {
+                        @Override
+                        public void mouseClicked(MouseEvent e) {
+                            String detail = dao.getOccupiedSlotDetail(slotId);
+                            if (detail != null) {
+                                JOptionPane.showMessageDialog(dialog,
+                                    detail,
+                                    "Slot " + slotNo + " — Occupancy Details",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                            } else {
+                                JOptionPane.showMessageDialog(dialog,
+                                    "No active ticket found for this slot.",
+                                    "No Data", JOptionPane.WARNING_MESSAGE);
+                            }
+                        }
+                    });
+                    break;
             }
             grid.add(cell);
         }
 
         // Legend
-        JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legend.setBackground(Color.WHITE);
-        JLabel green = new JLabel("  Available  ");
-        green.setOpaque(true); green.setBackground(new Color(39, 174, 96)); green.setForeground(Color.WHITE);
-        JLabel red = new JLabel("  Occupied  ");
-        red.setOpaque(true); red.setBackground(new Color(231, 76, 60)); red.setForeground(Color.WHITE);
-        legend.add(green); legend.add(new JLabel("   ")); legend.add(red);
+        JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        legend.setBackground(new Color(245, 245, 245));
+        legend.add(legendLabel("  Available  ",     new Color(39, 174, 96),  Color.WHITE));
+        legend.add(legendLabel("  Occupied (click) ",new Color(231, 76, 60), Color.WHITE));
+        legend.add(legendLabel("  Maintenance  ",   new Color(241, 196, 15), new Color(44, 62, 80)));
 
-        JPanel content = new JPanel(new BorderLayout(5, 5));
+        JPanel content = new JPanel(new BorderLayout(4, 4));
         content.add(new JScrollPane(grid), BorderLayout.CENTER);
         content.add(legend, BorderLayout.SOUTH);
 
@@ -282,9 +333,23 @@ public class ParkingUI extends JFrame {
         dialog.setVisible(true);
     }
 
+    /** Helper: creates a small coloured legend label. */
+    private JLabel legendLabel(String text, Color bg, Color fg) {
+        JLabel l = new JLabel(text);
+        l.setOpaque(true);
+        l.setBackground(bg);
+        l.setForeground(fg);
+        l.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        return l;
+    }
+
     // -------------------------------------------------------
-    //  manageSlotsWindow — add / update parking slots
+    //  manageSlotsWindow
     // -------------------------------------------------------
+    /**
+     * Opens a dialog for adding or updating a parking slot.
+     * Calls {@link ParkingDAO#addOrUpdateSlot} which uses Oracle MERGE.
+     */
     public void manageSlotsWindow() {
         JDialog dialog = new JDialog(this, "Manage Parking Slots", true);
         dialog.setSize(380, 260);
@@ -292,26 +357,25 @@ public class ParkingUI extends JFrame {
         dialog.setLayout(new GridBagLayout());
 
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets  = new Insets(8, 10, 8, 10);
-        gbc.anchor  = GridBagConstraints.WEST;
-        gbc.fill    = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(8, 10, 8, 10);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill   = GridBagConstraints.HORIZONTAL;
 
         JTextField txtSlotNum = new JTextField(12);
         JTextField txtFloor   = new JTextField(12);
         JComboBox<String> cmbSlotType =
             new JComboBox<>(new String[]{"CAR", "TWO_WHEELER", "HEAVY"});
 
-        // Row 0
         gbc.gridx = 0; gbc.gridy = 0; dialog.add(new JLabel("Slot Number:"), gbc);
-        gbc.gridx = 1; dialog.add(txtSlotNum, gbc);
-        // Row 1
-        gbc.gridx = 0; gbc.gridy = 1; dialog.add(new JLabel("Floor:"), gbc);
-        gbc.gridx = 1; dialog.add(txtFloor, gbc);
-        // Row 2
-        gbc.gridx = 0; gbc.gridy = 2; dialog.add(new JLabel("Slot Type:"), gbc);
-        gbc.gridx = 1; dialog.add(cmbSlotType, gbc);
+        gbc.gridx = 1;                dialog.add(txtSlotNum, gbc);
 
-        JButton btnSave = new JButton("💾 Save");
+        gbc.gridx = 0; gbc.gridy = 1; dialog.add(new JLabel("Floor / Zone:"), gbc);
+        gbc.gridx = 1;                dialog.add(txtFloor, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2; dialog.add(new JLabel("Type Allowed:"), gbc);
+        gbc.gridx = 1;                dialog.add(cmbSlotType, gbc);
+
+        JButton btnSave = new JButton("💾  Save Slot");
         btnSave.setBackground(new Color(52, 152, 219));
         btnSave.setForeground(Color.WHITE);
         btnSave.setFocusPainted(false);
@@ -338,7 +402,6 @@ public class ParkingUI extends JFrame {
                    : "❌ Failed to save slot. Check DB connection.",
                 ok ? "Success" : "Error",
                 ok ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
-
             if (ok) dialog.dispose();
         });
 
@@ -346,19 +409,24 @@ public class ParkingUI extends JFrame {
     }
 
     // -------------------------------------------------------
-    //  generateReportWindow — revenue report in a JTable
+    //  generateReportWindow
     // -------------------------------------------------------
+    /**
+     * Opens the Revenue Report dialog.
+     * Fetches data via {@link ParkingDAO#generateRevenueReport} which
+     * joins all 4 tables and includes PAYMENT_MODE from the PAYMENTS table.
+     */
     public void generateReportWindow() {
         JDialog dialog = new JDialog(this, "Revenue Report", true);
-        dialog.setSize(760, 460);
+        dialog.setSize(820, 460);
         dialog.setLocationRelativeTo(this);
 
-        // Date inputs
+        // Date-range inputs
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         top.setBackground(new Color(236, 240, 241));
         JTextField txtStart = new JTextField("01-OCT-2026", 12);
         JTextField txtEnd   = new JTextField("31-OCT-2026", 12);
-        JButton    btnFetch = new JButton("🔍 Fetch");
+        JButton    btnFetch = new JButton("🔍 Fetch Report");
         btnFetch.setBackground(new Color(52, 152, 219));
         btnFetch.setForeground(Color.WHITE);
         btnFetch.setFocusPainted(false);
@@ -367,37 +435,49 @@ public class ParkingUI extends JFrame {
         top.add(new JLabel("To:"));   top.add(txtEnd);
         top.add(btnFetch);
 
-        // Table
+        // Table — columns match the 4-table JOIN query
         String[] cols = {"Ticket ID", "Vehicle No", "Type", "Slot",
-                         "Entry Time", "Exit Time", "Hours", "Charge (₹)"};
-        DefaultTableModel model = new DefaultTableModel(cols, 0);
+                         "Entry Time", "Exit Time", "Hours", "Amount (₹)", "Payment Mode"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
         JTable table = new JTable(model);
         table.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         table.setRowHeight(22);
         table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
         btnFetch.addActionListener(e -> {
-            model.setRowCount(0); // clear previous rows
+            model.setRowCount(0);
             try (ResultSet rs = dao.generateRevenueReport(
                     txtStart.getText().trim(), txtEnd.getText().trim())) {
 
-                double total = 0;
+                double totalRevenue  = 0;
+                int    totalVehicles = 0;
+
                 while (rs.next()) {
-                    double charge = rs.getDouble("CHARGE");
-                    total += charge;
+                    double amount = rs.getDouble("AMOUNT");
+                    totalRevenue += amount;
+                    totalVehicles++;
                     model.addRow(new Object[]{
                         rs.getInt("TICKET_ID"),
-                        rs.getString("VEHICLE_NUM"),
+                        rs.getString("VEHICLE_NO"),
                         rs.getString("VEHICLE_TYPE"),
-                        rs.getString("SLOT_NUMBER"),
+                        rs.getString("SLOT_NO"),
                         rs.getString("ENTRY_TIME"),
                         rs.getString("EXIT_TIME"),
                         rs.getInt("HOURS_PARKED"),
-                        String.format("%.2f", charge)
+                        String.format("%.2f", amount),
+                        rs.getString("PAYMENT_MODE")
                     });
                 }
-                // Totals footer row
-                model.addRow(new Object[]{"", "", "", "", "", "TOTAL", "", String.format("%.2f", total)});
+
+                // Summary footer row
+                model.addRow(new Object[]{
+                    "", "", "", "", "",
+                    "TOTAL (" + totalVehicles + " vehicles)",
+                    "", String.format("%.2f", totalRevenue), ""
+                });
 
             } catch (SQLException ex) {
                 ex.printStackTrace();
@@ -418,7 +498,6 @@ public class ParkingUI extends JFrame {
     //  main — application entry point
     // -------------------------------------------------------
     public static void main(String[] args) {
-        // Use system look-and-feel for a native appearance
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignored) {}
