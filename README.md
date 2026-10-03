@@ -1,7 +1,7 @@
 # 🅿 Car Parking Management System
 
 A Java Swing/AWT + JDBC + Oracle XE desktop application for managing a parking lot —  
-vehicle entry/exit, slot monitoring, slot management, and revenue reports.
+vehicle entry/exit, real-time slot monitoring, slot management, and revenue reports.
 
 ---
 
@@ -10,9 +10,9 @@ vehicle entry/exit, slot monitoring, slot management, and revenue reports.
 ```
 ParkingUI  ──uses──►  ParkingDAO  ──uses──►  DBConnection
                            │
-                    creates/fetches
+               creates / fetches / manages
                            │
-                     Ticket   Slot
+              Ticket   Slot   Vehicles   Payment
 ```
 
 | Layer | Class | Responsibility |
@@ -20,7 +20,7 @@ ParkingUI  ──uses──►  ParkingDAO  ──uses──►  DBConnection
 | UI    | `ParkingUI`    | Swing forms, dialogs, event handlers |
 | DAO   | `ParkingDAO`   | All JDBC queries & transactions |
 | DB    | `DBConnection` | Single-point Oracle connection factory |
-| Model | `Ticket`, `Slot` | Plain Java objects (POJOs) |
+| Model | `Ticket`, `Slot`, `Vehicles`, `Payment` | Plain Java POJOs |
 
 ---
 
@@ -35,7 +35,9 @@ Car-Parking-Management-System/
         └── parkingsystem/
             ├── model/
             │   ├── Slot.java
-            │   └── Ticket.java
+            │   ├── Ticket.java
+            │   ├── Vehicles.java       ← maps to VEHICLES table
+            │   └── Payment.java        ← maps to PAYMENTS table
             ├── dao/
             │   ├── DBConnection.java
             │   └── ParkingDAO.java
@@ -50,30 +52,49 @@ Car-Parking-Management-System/
 ### Prerequisites
 - JDK 11+
 - Oracle Database XE (or any Oracle instance on port 1521)
-- `ojdbc8.jar` (or `ojdbc11.jar`) on your classpath
+- `ojdbc8.jar` (or `ojdbc11.jar`) on your classpath — place it in `lib/`
 
 ### 1. Oracle Schema — run this DDL in SQL Developer / SQL*Plus
 
 ```sql
+-- Table 1: Vehicles (master record per vehicle registration)
+CREATE TABLE VEHICLES (
+    VEHICLE_NO    VARCHAR2(20) PRIMARY KEY,
+    TYPE          VARCHAR2(20),        -- TWO_WHEELER | CAR | HEAVY
+    OWNER_CONTACT VARCHAR2(30)
+);
+
+-- Table 2: Parking Slots
 CREATE TABLE PARKING_SLOTS (
-    SLOT_ID     NUMBER PRIMARY KEY,
-    SLOT_NUMBER VARCHAR2(10) UNIQUE NOT NULL,
-    FLOOR       VARCHAR2(10),
-    SLOT_TYPE   VARCHAR2(20),   -- TWO_WHEELER | CAR | HEAVY
-    STATUS      VARCHAR2(20)    -- AVAILABLE   | OCCUPIED
+    SLOT_ID      NUMBER PRIMARY KEY,
+    SLOT_NO      VARCHAR2(10) UNIQUE NOT NULL,
+    FLOOR        VARCHAR2(10),
+    STATUS       VARCHAR2(20),         -- AVAILABLE | OCCUPIED | UNDER_MAINTENANCE
+    TYPE_ALLOWED VARCHAR2(20)          -- TWO_WHEELER | CAR | HEAVY
 );
 
+-- Table 3: Parking Tickets (one per parking session)
 CREATE TABLE PARKING_TICKETS (
-    TICKET_ID    NUMBER PRIMARY KEY,
-    VEHICLE_NUM  VARCHAR2(20) NOT NULL,
-    VEHICLE_TYPE VARCHAR2(20),
-    SLOT_ID      NUMBER REFERENCES PARKING_SLOTS(SLOT_ID),
-    ENTRY_TIME   TIMESTAMP DEFAULT SYSTIMESTAMP,
-    EXIT_TIME    TIMESTAMP
+    TICKET_ID  NUMBER PRIMARY KEY,
+    ENTRY_TIME TIMESTAMP DEFAULT SYSTIMESTAMP,
+    EXIT_TIME  TIMESTAMP,
+    VEHICLE_NO VARCHAR2(20) REFERENCES VEHICLES(VEHICLE_NO),
+    SLOT_ID    NUMBER       REFERENCES PARKING_SLOTS(SLOT_ID)
 );
 
-CREATE SEQUENCE SEQ_TICKET_ID START WITH 1 INCREMENT BY 1;
-CREATE SEQUENCE SEQ_SLOT_ID   START WITH 1 INCREMENT BY 1;
+-- Table 4: Payments (one per exit transaction)
+CREATE TABLE PAYMENTS (
+    PAYMENT_ID   NUMBER PRIMARY KEY,
+    AMOUNT       NUMBER(10,2),
+    PAYMENT_TIME TIMESTAMP DEFAULT SYSTIMESTAMP,
+    PAYMENT_MODE VARCHAR2(10),          -- CASH | CARD | UPI
+    TICKET_ID    NUMBER REFERENCES PARKING_TICKETS(TICKET_ID)
+);
+
+-- Sequences
+CREATE SEQUENCE SEQ_TICKET_ID  START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE SEQ_SLOT_ID    START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE SEQ_PAYMENT_ID START WITH 1 INCREMENT BY 1;
 ```
 
 ### 2. Configure DB Credentials
@@ -89,14 +110,13 @@ public static final String PASS = "your_password_here";   // ← change this
 ### 3. Compile & Run
 
 ```bash
-# Compile
-javac -cp .;lib/ojdbc8.jar -d out src/com/parkingsystem/**/*.java
+# Compile all source files
+javac -cp .;lib/ojdbc8.jar -d out src/com/parkingsystem/model/*.java ^
+      src/com/parkingsystem/dao/*.java src/com/parkingsystem/ui/*.java
 
-# Run
+# Run the application
 java -cp out;lib/ojdbc8.jar com.parkingsystem.ui.ParkingUI
 ```
-
-> Place `ojdbc8.jar` inside a `lib/` folder at the project root.
 
 ---
 
@@ -104,11 +124,11 @@ java -cp out;lib/ojdbc8.jar com.parkingsystem.ui.ParkingUI
 
 | Feature | Description |
 |---------|-------------|
-| **Vehicle Entry** | Finds first available slot by type, marks it occupied, issues a ticket |
-| **Vehicle Exit** | Calculates hourly charge, records exit time, frees the slot |
-| **Slot Monitor** | Live colour-coded grid (🟢 Available / 🔴 Occupied) |
-| **Manage Slots** | Add new slots or update floor/type via Oracle MERGE (upsert) |
-| **Revenue Report** | Date-range report with per-session charges and totals |
+| **Vehicle Entry** | Upserts VEHICLES record, finds first available slot by type, marks it OCCUPIED, creates PARKING_TICKET |
+| **Vehicle Exit** | Calculates charge via duration × rate, inserts PAYMENTS record, stamps EXIT_TIME, frees slot |
+| **Slot Monitor** | Live colour-coded grid — click any 🔴 OCCUPIED slot to see vehicle, owner, entry time & estimated fee |
+| **Manage Slots** | Add new slots or update floor/type via Oracle MERGE (upsert on SLOT_NO) |
+| **Revenue Report** | Date-range report joining all 4 tables: vehicle, slot, ticket, payment |
 
 ### 💰 Parking Rates
 
@@ -118,22 +138,50 @@ java -cp out;lib/ojdbc8.jar com.parkingsystem.ui.ParkingUI
 | Car           | ₹20 / hour |
 | Heavy Vehicle | ₹40 / hour |
 
+> Minimum charge = 1 hour regardless of actual duration.
+
 ---
 
-## 📦 Class Diagram Summary
+## 🗃 ER Diagram Summary
+
+```
+VEHICLES ──(1)──── generates ────(N)── PARKING_TICKETS
+                                              │
+PARKING_SLOTS ──(1)── assigned to ──(N)──────┘
+                                              │
+                                        settled by
+                                              │
+                                          PAYMENTS
+```
+
+**Functional Dependencies (from schema):**
+
+- `VEHICLES`: Vehicle_No → Type, Owner_contact
+- `PARKING_SLOTS`: Slot_id → Slot_no, Floor, Status, Type_allowed
+- `PARKING_TICKETS`: Ticket_ID → Entry_time, Exit_time, Vehicle_No, Slot_id
+- `PAYMENTS`: Payment_ID → Amount, Payment_time, Payment_mode, Ticket_ID
+
+---
+
+## 📦 Class Diagram
 
 ```
 ParkingUI
- ├── txtVehicleNum : JTextField
- ├── txtTicketId   : JTextField
- ├── cmbType       : JComboBox
+ ├── txtVehicleNum   : JTextField
+ ├── txtOwnerContact : JTextField        ← maps to VEHICLES.OWNER_CONTACT
+ ├── txtTicketId     : JTextField
+ ├── cmbType         : JComboBox
  ├── btnEntry / btnExit / btnSlotMonitor / btnManageSlots / btnReports : JButton
  └── methods: main(), handleEntry(), handleExit(),
               displaySlotGrid(), manageSlotsWindow(), generateReportWindow()
 
 ParkingDAO
- └── methods: registerVehicleEntry(), processVehicleExit(),
-              getRealTimeSlotStatuses(), addOrUpdateSlot(), generateRevenueReport()
+ └── methods: registerVehicleEntry(vehicleNum, vehicleType, ownerContact)
+              processVehicleExit(ticketId, paymentMode)
+              getRealTimeSlotStatuses()
+              getOccupiedSlotDetail(slotId)   ← supports click-to-view
+              addOrUpdateSlot(slotNum, floor, type)
+              generateRevenueReport(startDate, endDate)
 
 DBConnection
  ├── URL  = "jdbc:oracle:thin:@localhost:1521:xe"
@@ -141,8 +189,10 @@ DBConnection
  ├── PASS = "password"
  └── getConnection() : Connection
 
-Ticket  →  ticketId, vehicleNum, vehicleType, slotId, entryTime, exitTime
-Slot    →  slotId, slotNumber, floor, slotType, status
+Ticket   → ticketId, vehicleNum, vehicleType, slotId, entryTime, exitTime
+Slot     → slotId, slotNumber, floor, slotType, status
+Vehicles → vehicleNo, type, ownerContact
+Payment  → paymentId, amount, paymentTime, paymentMode, ticketId
 ```
 
 ---
