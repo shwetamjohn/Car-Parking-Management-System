@@ -65,18 +65,16 @@ public class ParkingDAO {
      *  1. Upserts the vehicle record into VEHICLES (Oracle MERGE).
      *  2. Finds the first AVAILABLE slot matching the vehicle type.
      *  3. Marks that slot OCCUPIED.
-     *  4. Inserts a new row in PARKING_TICKETS.
-     *
-     * The entire operation is wrapped in a single transaction.
+     *  4. Inserts a PARKING_TICKETS row and retrieves the generated Ticket ID
+     *     using SEQ_TICKET_ID.CURRVAL so the UI can print it on the ticket.
      *
      * @param vehicleNum   licence plate, e.g. "MH12AB1234"
      * @param vehicleType  "TWO_WHEELER" | "CAR" | "HEAVY"
      * @param ownerContact owner phone / email (stored in VEHICLES)
-     * @return true on success; false if no slot available or DB error
+     * @return generated Ticket ID (> 0) on success; -1 if no slot / DB error
      */
-    public boolean registerVehicleEntry(String vehicleNum, String vehicleType,
-                                        String ownerContact) {
-        // MERGE keeps VEHICLES up-to-date on repeat visits
+    public int registerVehicleEntry(String vehicleNum, String vehicleType,
+                                    String ownerContact) {
         String upsertVehicleSQL =
             "MERGE INTO VEHICLES tgt " +
             "USING (SELECT ? AS VEHICLE_NO FROM DUAL) src " +
@@ -89,7 +87,7 @@ public class ParkingDAO {
         String findSlotSQL =
             "SELECT SLOT_ID FROM PARKING_SLOTS " +
             "WHERE TYPE_ALLOWED = ? AND STATUS = 'AVAILABLE' AND ROWNUM = 1 " +
-            "FOR UPDATE";   // lock the row to prevent double-assignment
+            "FOR UPDATE";   // row-level lock prevents double-assignment
 
         String markOccupiedSQL =
             "UPDATE PARKING_SLOTS SET STATUS = 'OCCUPIED' WHERE SLOT_ID = ?";
@@ -98,17 +96,19 @@ public class ParkingDAO {
             "INSERT INTO PARKING_TICKETS (TICKET_ID, VEHICLE_NO, SLOT_ID, ENTRY_TIME) " +
             "VALUES (SEQ_TICKET_ID.NEXTVAL, ?, ?, SYSTIMESTAMP)";
 
+        String getCurrvalSQL = "SELECT SEQ_TICKET_ID.CURRVAL AS TID FROM DUAL";
+
         try (Connection conn = DBConnection.getConnection()) {
             conn.setAutoCommit(false);
 
             // Step 1 — upsert vehicle record
             try (PreparedStatement ps = conn.prepareStatement(upsertVehicleSQL)) {
-                ps.setString(1, vehicleNum);   // ON key
-                ps.setString(2, vehicleType);  // UPDATE
-                ps.setString(3, ownerContact); // UPDATE
-                ps.setString(4, vehicleNum);   // INSERT
-                ps.setString(5, vehicleType);  // INSERT
-                ps.setString(6, ownerContact); // INSERT
+                ps.setString(1, vehicleNum);
+                ps.setString(2, vehicleType);
+                ps.setString(3, ownerContact);
+                ps.setString(4, vehicleNum);
+                ps.setString(5, vehicleType);
+                ps.setString(6, ownerContact);
                 ps.executeUpdate();
             }
 
@@ -121,7 +121,7 @@ public class ParkingDAO {
                         slotId = rs.getInt("SLOT_ID");
                     } else {
                         conn.rollback();
-                        return false;  // parking full for this vehicle type
+                        return -1;  // parking full for this vehicle type
                     }
                 }
             }
@@ -132,20 +132,64 @@ public class ParkingDAO {
                 ps.executeUpdate();
             }
 
-            // Step 4 — create parking ticket
+            // Step 4 — insert ticket
             try (PreparedStatement ps = conn.prepareStatement(insertTicketSQL)) {
                 ps.setString(1, vehicleNum);
                 ps.setInt(2, slotId);
                 ps.executeUpdate();
             }
 
+            // Step 5 — retrieve the Ticket ID that was just generated
+            int ticketId = -1;
+            try (PreparedStatement ps = conn.prepareStatement(getCurrvalSQL);
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) ticketId = rs.getInt("TID");
+            }
+
             conn.commit();
-            return true;
+            return ticketId;   // ← returned to UI so it can print the ticket
 
         } catch (SQLException e) {
             e.printStackTrace();
-            return false;
+            return -1;
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 1b. getEstimatedFee  (called BEFORE processVehicleExit so UI can
+    //                       display the amount before asking payment mode)
+    // ------------------------------------------------------------------
+
+    /**
+     * Calculates the current parking fee for an open ticket WITHOUT
+     * modifying any data. Used by handleExit() to display the amount
+     * on screen before the attendant selects a payment mode.
+     *
+     * @param ticketId open (not yet exited) ticket ID
+     * @return estimated fee in INR; -1 if ticket not found / already exited
+     */
+    public double getEstimatedFee(int ticketId) {
+        String sql =
+            "SELECT V.TYPE AS VEHICLE_TYPE, T.ENTRY_TIME " +
+            "FROM PARKING_TICKETS T " +
+            "JOIN VEHICLES V ON T.VEHICLE_NO = V.VEHICLE_NO " +
+            "WHERE T.TICKET_ID = ? AND T.EXIT_TIME IS NULL";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, ticketId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    Timestamp entryTs = rs.getTimestamp("ENTRY_TIME");
+                    long durationMs   = System.currentTimeMillis() - entryTs.getTime();
+                    long hours        = Math.max(1L, (long) Math.ceil(durationMs / 3_600_000.0));
+                    return hours * getRateForType(rs.getString("VEHICLE_TYPE"));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return -1;
     }
 
     // ------------------------------------------------------------------
@@ -165,7 +209,6 @@ public class ParkingDAO {
      * @return computed charge in INR; 0.0 if ticket not found / already exited
      */
     public double processVehicleExit(int ticketId, String paymentMode) {
-        // Join VEHICLES to get vehicle type (not stored in PARKING_TICKETS)
         String fetchSQL =
             "SELECT T.SLOT_ID, V.TYPE AS VEHICLE_TYPE, T.ENTRY_TIME " +
             "FROM PARKING_TICKETS T " +
@@ -198,7 +241,7 @@ public class ParkingDAO {
                         entryTs     = rs.getTimestamp("ENTRY_TIME");
                     } else {
                         conn.rollback();
-                        return 0.0;  // not found or already exited
+                        return 0.0;
                     }
                 }
             }
@@ -209,7 +252,7 @@ public class ParkingDAO {
             double ratePerHour    = getRateForType(vehicleType);
             double charge         = hours * ratePerHour;
 
-            // Insert into PAYMENTS table
+            // Insert PAYMENTS record
             try (PreparedStatement ps = conn.prepareStatement(insertPaymentSQL)) {
                 ps.setDouble(1, charge);
                 ps.setString(2, paymentMode);
@@ -217,13 +260,13 @@ public class ParkingDAO {
                 ps.executeUpdate();
             }
 
-            // Stamp exit time on ticket
+            // Stamp exit time
             try (PreparedStatement ps = conn.prepareStatement(updateExitSQL)) {
                 ps.setInt(1, ticketId);
                 ps.executeUpdate();
             }
 
-            // Free the parking slot
+            // Free the slot
             try (PreparedStatement ps = conn.prepareStatement(freeSlotSQL)) {
                 ps.setInt(1, slotId);
                 ps.executeUpdate();
@@ -366,12 +409,9 @@ public class ParkingDAO {
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(mergeSQL)) {
 
-            // ON clause
             ps.setString(1, slotNum);
-            // WHEN MATCHED — update
             ps.setString(2, floor);
             ps.setString(3, type);
-            // WHEN NOT MATCHED — insert
             ps.setString(4, slotNum);
             ps.setString(5, floor);
             ps.setString(6, type);
@@ -392,18 +432,15 @@ public class ParkingDAO {
 
     /**
      * Returns a ResultSet of all completed sessions in the given date range.
-     * Joins all 4 tables to produce a full revenue report including
-     * payment mode from the PAYMENTS table.
+     * Joins all 4 tables: PARKING_TICKETS, VEHICLES, PARKING_SLOTS, PAYMENTS.
      *
-     * Columns returned:
-     *   TICKET_ID, VEHICLE_NO, VEHICLE_TYPE, SLOT_NO,
-     *   ENTRY_TIME, EXIT_TIME, HOURS_PARKED, AMOUNT, PAYMENT_MODE
+     * Columns: TICKET_ID, VEHICLE_NO, VEHICLE_TYPE, SLOT_NO,
+     *          ENTRY_TIME, EXIT_TIME, HOURS_PARKED, AMOUNT, PAYMENT_MODE
      *
-     * Caller MUST close the returned ResultSet (and its Connection).
+     * Caller MUST close the returned ResultSet (and its underlying Connection).
      *
      * @param startDate "DD-MON-YYYY", e.g. "01-OCT-2026"
      * @param endDate   "DD-MON-YYYY", e.g. "31-OCT-2026"
-     * @return ResultSet with revenue rows
      */
     public ResultSet generateRevenueReport(String startDate, String endDate)
             throws SQLException {
@@ -430,6 +467,5 @@ public class ParkingDAO {
         ps.setString(1, startDate);
         ps.setString(2, endDate);
         return ps.executeQuery();
-        // Caller closes the ResultSet → closes Statement → closes Connection
     }
 }
