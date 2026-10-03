@@ -21,11 +21,11 @@ import java.util.List;
  *   │       🅿 Car Parking Management System   │  ← header
  *   ├──────────────────────────────────────────┤
  *   │  Vehicle No   [__________]               │
- *   │  Owner Contact[__________]               │  ← new (maps to VEHICLES.OWNER_CONTACT)
+ *   │  Owner Contact[__________]               │
  *   │  Ticket ID    [__________]               │
  *   │  Type         [ComboBox ]                │
  *   ├──────────────────────────────────────────┤
- *   │ [Entry] [Exit] [Slots] [Manage] [Reports]│  ← button bar
+ *   │ [Entry] [Exit] [Slots] [Manage] [Reports]│
  *   └──────────────────────────────────────────┘
  */
 public class ParkingUI extends JFrame {
@@ -163,14 +163,18 @@ public class ParkingUI extends JFrame {
     //  handleEntry
     // -------------------------------------------------------
     /**
-     * Collects Vehicle Number, Owner Contact, and Vehicle Type from the form,
-     * then calls {@link ParkingDAO#registerVehicleEntry} which upserts VEHICLES
-     * and inserts into PARKING_TICKETS.
+     * Activity diagram flow:
+     *  Enter Vehicle No & Type → Query available slots → Slot available?
+     *    Yes → Assign slot → Mark OCCUPIED → Generate Ticket → Print Ticket
+     *    No  → Show "Parking Full" message
+     *
+     * The generated Ticket ID is shown prominently so the attendant
+     * can hand it to the driver — they will need it to exit.
      */
     public void handleEntry() {
-        String vehicleNum    = txtVehicleNum.getText().trim().toUpperCase();
-        String ownerContact  = txtOwnerContact.getText().trim();
-        String vehicleType   = (String) cmbType.getSelectedItem();
+        String vehicleNum   = txtVehicleNum.getText().trim().toUpperCase();
+        String ownerContact = txtOwnerContact.getText().trim();
+        String vehicleType  = (String) cmbType.getSelectedItem();
 
         if (vehicleNum.isEmpty()) {
             JOptionPane.showMessageDialog(this,
@@ -179,21 +183,41 @@ public class ParkingUI extends JFrame {
             return;
         }
 
-        boolean success = dao.registerVehicleEntry(vehicleNum, vehicleType, ownerContact);
+        // registerVehicleEntry now returns the Ticket ID (not just boolean)
+        int ticketId = dao.registerVehicleEntry(vehicleNum, vehicleType, ownerContact);
 
-        if (success) {
+        if (ticketId > 0) {
+            // Print Parking Ticket — show Ticket ID prominently (driver needs this to exit)
             JOptionPane.showMessageDialog(this,
-                "✅ Entry Registered!\n\n" +
-                "Vehicle  : " + vehicleNum   + "\n" +
-                "Type     : " + vehicleType  + "\n" +
-                "Contact  : " + (ownerContact.isEmpty() ? "N/A" : ownerContact),
-                "Entry Successful", JOptionPane.INFORMATION_MESSAGE);
+                "════════════════════════════\n" +
+                "      PARKING TICKET\n" +
+                "════════════════════════════\n" +
+                "  Ticket ID   : " + ticketId   + "\n" +
+                "  Vehicle No  : " + vehicleNum  + "\n" +
+                "  Type        : " + vehicleType + "\n" +
+                "  Contact     : " + (ownerContact.isEmpty() ? "N/A" : ownerContact) + "\n" +
+                "════════════════════════════\n" +
+                "  Please keep this ticket.\n" +
+                "  Show it at exit gate.\n" +
+                "════════════════════════════",
+                "✅ Entry Registered — Ticket #" + ticketId,
+                JOptionPane.INFORMATION_MESSAGE);
+
+            // Auto-fill the Ticket ID field so attendant can reference it quickly
+            txtTicketId.setText(String.valueOf(ticketId));
             txtVehicleNum.setText("");
             txtOwnerContact.setText("");
+
+        } else if (ticketId == -1) {
+            // No available slot — show "Parking Full" as per activity diagram
+            JOptionPane.showMessageDialog(this,
+                "⚠️  Parking Full!\n\n" +
+                "No available slot for vehicle type: " + vehicleType + "\n" +
+                "Please ask the driver to wait or try a different type.",
+                "Parking Full", JOptionPane.WARNING_MESSAGE);
         } else {
             JOptionPane.showMessageDialog(this,
-                "❌ No available slot for type: " + vehicleType +
-                "\n\nParking may be full or a DB error occurred.",
+                "❌ A database error occurred. Please check the connection.",
                 "Entry Failed", JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -202,9 +226,12 @@ public class ParkingUI extends JFrame {
     //  handleExit
     // -------------------------------------------------------
     /**
-     * Validates the Ticket ID, prompts for payment mode, then calls
-     * {@link ParkingDAO#processVehicleExit} which inserts into PAYMENTS,
-     * stamps EXIT_TIME, and frees the slot.
+     * Activity diagram flow:
+     *  Enter Ticket ID → Fetch Entry Time from DB → Calculate duration & fee
+     *  → Display fee on screen → Collect payment → Record in PAYMENTS table
+     *  → Update EXIT_TIME → Update slot to AVAILABLE → Print Payment Receipt
+     *
+     * Fee is displayed BEFORE asking for payment mode (matches activity diagram).
      */
     public void handleExit() {
         String ticketStr = txtTicketId.getText().trim();
@@ -225,26 +252,49 @@ public class ParkingUI extends JFrame {
             return;
         }
 
-        // Ask for payment mode before processing
+        // Step 1: Calculate and DISPLAY fee BEFORE asking payment mode
+        double estimatedFee = dao.getEstimatedFee(ticketId);
+        if (estimatedFee < 0) {
+            JOptionPane.showMessageDialog(this,
+                "❌ Ticket ID #" + ticketId + " not found or vehicle has already exited.",
+                "Exit Failed", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Step 2: Show fee on screen (as per activity diagram)
+        JOptionPane.showMessageDialog(this,
+            "Ticket ID  : " + ticketId + "\n" +
+            "Amount Due : \u20b9" + String.format("%.2f", estimatedFee),
+            "Parking Fee", JOptionPane.INFORMATION_MESSAGE);
+
+        // Step 3: Collect payment mode
         String[] modes = {"CASH", "CARD", "UPI"};
         String paymentMode = (String) JOptionPane.showInputDialog(
-            this, "Select Payment Mode:", "Payment",
+            this, "Select Payment Mode:", "Collect Payment",
             JOptionPane.PLAIN_MESSAGE, null, modes, modes[0]);
-        if (paymentMode == null) return; // user cancelled
+        if (paymentMode == null) return; // attendant cancelled
 
+        // Step 4: Process exit — inserts PAYMENTS, stamps EXIT_TIME, frees slot
         double charge = dao.processVehicleExit(ticketId, paymentMode);
 
         if (charge > 0) {
+            // Print Payment Receipt
             JOptionPane.showMessageDialog(this,
-                "✅ Exit Processed!\n\n" +
-                "Ticket ID      : " + ticketId    + "\n" +
-                "Payment Mode   : " + paymentMode + "\n" +
-                "Amount Charged : \u20b9" + String.format("%.2f", charge),
-                "Exit Successful", JOptionPane.INFORMATION_MESSAGE);
+                "════════════════════════════\n" +
+                "      PAYMENT RECEIPT\n" +
+                "════════════════════════════\n" +
+                "  Ticket ID    : " + ticketId    + "\n" +
+                "  Payment Mode : " + paymentMode + "\n" +
+                "  Amount Paid  : \u20b9" + String.format("%.2f", charge) + "\n" +
+                "════════════════════════════\n" +
+                "  Thank you! Drive safely.\n" +
+                "════════════════════════════",
+                "✅ Exit Processed — Receipt",
+                JOptionPane.INFORMATION_MESSAGE);
             txtTicketId.setText("");
         } else {
             JOptionPane.showMessageDialog(this,
-                "❌ Ticket ID not found or vehicle already exited.",
+                "❌ Could not process exit. Please try again.",
                 "Exit Failed", JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -253,83 +303,101 @@ public class ParkingUI extends JFrame {
     //  displaySlotGrid
     // -------------------------------------------------------
     /**
-     * Opens a dialog showing a colour-coded grid of all parking slots.
-     * Clicking an OCCUPIED slot queries DB (via getOccupiedSlotDetail)
-     * and shows vehicle number, owner contact, entry time, and estimated fee.
+     * Live colour-coded grid of all parking slots.
+     *  🟢 AVAILABLE         — green
+     *  🔴 OCCUPIED          — red  (click to see vehicle details + elapsed time)
+     *  🟡 UNDER_MAINTENANCE — yellow
      *
-     * 🟢 Green  = AVAILABLE
-     * 🔴 Red    = OCCUPIED        (click to see vehicle details)
-     * 🟡 Yellow = UNDER_MAINTENANCE
+     * A Refresh button re-queries the DB without closing the dialog.
      */
     public void displaySlotGrid() {
-        List<Slot> slots = dao.getRealTimeSlotStatuses();
-
         JDialog dialog = new JDialog(this, "Slot Monitor — Live Status", true);
-        dialog.setSize(640, 460);
+        dialog.setSize(660, 500);
         dialog.setLocationRelativeTo(this);
 
-        JPanel grid = new JPanel(new GridLayout(0, 6, 6, 6));
-        grid.setBorder(new EmptyBorder(12, 12, 12, 12));
-        grid.setBackground(Color.WHITE);
+        // Grid panel is rebuilt on each refresh
+        JPanel wrapper = new JPanel(new BorderLayout());
 
-        for (Slot s : slots) {
-            JLabel cell = new JLabel(s.getSlotNumber(), SwingConstants.CENTER);
-            cell.setOpaque(true);
-            cell.setFont(new Font("Segoe UI", Font.BOLD, 11));
-            cell.setBorder(BorderFactory.createLineBorder(Color.DARK_GRAY, 1));
-            cell.setToolTipText("Floor: " + s.getFloor() + " | Type: " + s.getSlotType()
-                                + " | " + s.getStatus());
-
-            switch (s.getStatus().toUpperCase()) {
-                case "AVAILABLE":
-                    cell.setBackground(new Color(39, 174, 96));
-                    cell.setForeground(Color.WHITE);
-                    break;
-                case "UNDER_MAINTENANCE":
-                    cell.setBackground(new Color(241, 196, 15));
-                    cell.setForeground(new Color(44, 62, 80));
-                    break;
-                case "OCCUPIED":
-                default:
-                    cell.setBackground(new Color(231, 76, 60));
-                    cell.setForeground(Color.WHITE);
-                    // Click on OCCUPIED slot → show vehicle details
-                    final int slotId = s.getSlotId();
-                    final String slotNo = s.getSlotNumber();
-                    cell.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    cell.addMouseListener(new MouseAdapter() {
-                        @Override
-                        public void mouseClicked(MouseEvent e) {
-                            String detail = dao.getOccupiedSlotDetail(slotId);
-                            if (detail != null) {
-                                JOptionPane.showMessageDialog(dialog,
-                                    detail,
-                                    "Slot " + slotNo + " — Occupancy Details",
-                                    JOptionPane.INFORMATION_MESSAGE);
-                            } else {
-                                JOptionPane.showMessageDialog(dialog,
-                                    "No active ticket found for this slot.",
-                                    "No Data", JOptionPane.WARNING_MESSAGE);
-                            }
-                        }
-                    });
-                    break;
-            }
-            grid.add(cell);
-        }
-
-        // Legend
+        // Legend (static — stays at bottom)
         JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         legend.setBackground(new Color(245, 245, 245));
-        legend.add(legendLabel("  Available  ",     new Color(39, 174, 96),  Color.WHITE));
-        legend.add(legendLabel("  Occupied (click) ",new Color(231, 76, 60), Color.WHITE));
-        legend.add(legendLabel("  Maintenance  ",   new Color(241, 196, 15), new Color(44, 62, 80)));
+        legend.add(legendLabel("  Available  ",      new Color(39, 174, 96),  Color.WHITE));
+        legend.add(legendLabel("  Occupied (click) ", new Color(231, 76, 60), Color.WHITE));
+        legend.add(legendLabel("  Maintenance  ",    new Color(241, 196, 15), new Color(44, 62, 80)));
 
-        JPanel content = new JPanel(new BorderLayout(4, 4));
-        content.add(new JScrollPane(grid), BorderLayout.CENTER);
-        content.add(legend, BorderLayout.SOUTH);
+        // Refresh button
+        JButton btnRefresh = new JButton("🔄 Refresh");
+        btnRefresh.setBackground(new Color(46, 204, 113));
+        btnRefresh.setForeground(Color.WHITE);
+        btnRefresh.setFocusPainted(false);
 
-        dialog.setContentPane(content);
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(legend, BorderLayout.WEST);
+        south.add(btnRefresh, BorderLayout.EAST);
+
+        wrapper.add(south, BorderLayout.SOUTH);
+
+        // Rebuild grid into wrapper
+        Runnable buildGrid = () -> {
+            if (wrapper.getComponentCount() > 1) {
+                wrapper.remove(0); // remove old grid
+            }
+            List<Slot> slots = dao.getRealTimeSlotStatuses();
+
+            JPanel grid = new JPanel(new GridLayout(0, 6, 6, 6));
+            grid.setBorder(new EmptyBorder(12, 12, 12, 12));
+            grid.setBackground(Color.WHITE);
+
+            for (Slot s : slots) {
+                JLabel cell = new JLabel(s.getSlotNumber(), SwingConstants.CENTER);
+                cell.setOpaque(true);
+                cell.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                cell.setBorder(BorderFactory.createLineBorder(Color.DARK_GRAY, 1));
+                cell.setToolTipText("Floor: " + s.getFloor()
+                    + " | Type: " + s.getSlotType()
+                    + " | " + s.getStatus());
+
+                switch (s.getStatus().toUpperCase()) {
+                    case "AVAILABLE":
+                        cell.setBackground(new Color(39, 174, 96));
+                        cell.setForeground(Color.WHITE);
+                        break;
+                    case "UNDER_MAINTENANCE":
+                        cell.setBackground(new Color(241, 196, 15));
+                        cell.setForeground(new Color(44, 62, 80));
+                        break;
+                    case "OCCUPIED":
+                    default:
+                        cell.setBackground(new Color(231, 76, 60));
+                        cell.setForeground(Color.WHITE);
+                        final int    slotId = s.getSlotId();
+                        final String slotNo = s.getSlotNumber();
+                        cell.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                        cell.addMouseListener(new MouseAdapter() {
+                            @Override
+                            public void mouseClicked(MouseEvent e) {
+                                String detail = dao.getOccupiedSlotDetail(slotId);
+                                JOptionPane.showMessageDialog(dialog,
+                                    detail != null ? detail
+                                                   : "No active ticket for this slot.",
+                                    "Slot " + slotNo + " — Occupancy Details",
+                                    detail != null ? JOptionPane.INFORMATION_MESSAGE
+                                                   : JOptionPane.WARNING_MESSAGE);
+                            }
+                        });
+                        break;
+                }
+                grid.add(cell);
+            }
+            wrapper.add(new JScrollPane(grid), BorderLayout.CENTER);
+            wrapper.revalidate();
+            wrapper.repaint();
+        };
+
+        buildGrid.run(); // initial load
+        btnRefresh.addActionListener(e -> buildGrid.run());
+
+        dialog.setContentPane(wrapper);
         dialog.setVisible(true);
     }
 
@@ -412,16 +480,14 @@ public class ParkingUI extends JFrame {
     //  generateReportWindow
     // -------------------------------------------------------
     /**
-     * Opens the Revenue Report dialog.
-     * Fetches data via {@link ParkingDAO#generateRevenueReport} which
-     * joins all 4 tables and includes PAYMENT_MODE from the PAYMENTS table.
+     * Revenue Report — joins all 4 tables.
+     * UC-05: date range selection, aggregate totals, vehicle count.
      */
     public void generateReportWindow() {
         JDialog dialog = new JDialog(this, "Revenue Report", true);
-        dialog.setSize(820, 460);
+        dialog.setSize(850, 480);
         dialog.setLocationRelativeTo(this);
 
-        // Date-range inputs
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         top.setBackground(new Color(236, 240, 241));
         JTextField txtStart = new JTextField("01-OCT-2026", 12);
@@ -435,9 +501,8 @@ public class ParkingUI extends JFrame {
         top.add(new JLabel("To:"));   top.add(txtEnd);
         top.add(btnFetch);
 
-        // Table — columns match the 4-table JOIN query
         String[] cols = {"Ticket ID", "Vehicle No", "Type", "Slot",
-                         "Entry Time", "Exit Time", "Hours", "Amount (₹)", "Payment Mode"};
+                         "Entry Time", "Exit Time", "Hours", "Amount (\u20b9)", "Payment Mode"};
         DefaultTableModel model = new DefaultTableModel(cols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
@@ -472,7 +537,7 @@ public class ParkingUI extends JFrame {
                     });
                 }
 
-                // Summary footer row
+                // Summary row — total revenue + vehicle count (UC-05)
                 model.addRow(new Object[]{
                     "", "", "", "", "",
                     "TOTAL (" + totalVehicles + " vehicles)",
