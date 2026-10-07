@@ -1,0 +1,25 @@
+# Compiled Java class files
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# IDE project files
+.idea/
+*.iml
+.eclipse
+.classpath
+.project
+*.vscode/
+
+# Oracle JDBC driver (add manually to lib/)
+lib/ojdbc*.jar
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

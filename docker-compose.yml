@@ -1,0 +1,19 @@
+services:
+  oracle-db:
+    image: gvenzl/oracle-free:23-slim-faststart
+    container_name: oracle23c_parking_db
+    restart: unless-stopped
+    ports:
+      - "1522:1521"
+    environment:
+      - ORACLE_PASSWORD=ParkingPass123
+      - APP_USER=PARKING
+      - APP_USER_PASSWORD=ParkingPass123
+      - ORACLE_DATABASE=FREEPDB1
+    volumes:
+      - ./schema.sql:/container-entrypoint-initdb.d/01_schema.sql:ro
+      - oracle_data:/opt/oracle/oradata
+
+volumes:
+  oracle_data:
+    driver: local
