@@ -204,7 +204,3 @@ Payment  → paymentId, amount, paymentTime, paymentMode, ticketId
 | shwetamjohn | GUI & Main Logic |
 
 ---
-
-## 📄 License
-
-MIT
